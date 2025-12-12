@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: count-folks-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-countfolks}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - count-folks-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: count-folks-backend
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_USER: ${POSTGRES_USER:-postgres}
+      DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      DATABASE_NAME: ${POSTGRES_DB:-countfolks}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - count-folks-network
+    restart: unless-stopped
+
+  detector:
+    build:
+      context: ./detector
+      dockerfile: Dockerfile
+    container_name: count-folks-detector
+    environment:
+      STREAM_URL: ${STREAM_URL:-https://wintereventsonenbreugel.s3.eu-west-1.amazonaws.com/hls/0/stream.m3u8}
+      STREAM_ID: ${STREAM_ID:-stream1}
+      BACKEND_URL: http://backend:3000
+      CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.35}
+      AGGREGATION_INTERVAL: ${AGGREGATION_INTERVAL:-15}
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - count-folks-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: count-folks-frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:3000
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - count-folks-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  count-folks-network:
+    driver: bridge
+
