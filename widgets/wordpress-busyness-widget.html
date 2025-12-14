@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Count Folks – WordPress Busyness Widget</title>
+
+  <!-- Lightweight styles so it fits inside a WordPress HTML block -->
+  <style>
+    :root {
+      color-scheme: light dark;
+      --cf-bg: rgba(255, 255, 255, 0.88);
+      --cf-border: rgba(0, 0, 0, 0.08);
+      --cf-text: #111;
+      --cf-sub: #555;
+      --cf-neutral: #9ca3af;
+      --cf-up: #e11d48;
+      --cf-down: #16a34a;
+      --cf-warn: #f59e0b;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --cf-bg: rgba(17, 24, 39, 0.92);
+        --cf-border: rgba(255, 255, 255, 0.08);
+        --cf-text: #f9fafb;
+        --cf-sub: #d1d5db;
+      }
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden; /* avoid scrollbars inside WP HTML block/iframe */
+      background: transparent;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      color: var(--cf-text);
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 10px;
+      box-sizing: border-box;
+    }
+
+    .cf-card {
+      width: min(760px, 100%);
+      margin: 0 auto;
+      padding: 14px 14px 12px;
+      border-radius: 14px;
+      background: var(--cf-bg);
+      border: 1px solid var(--cf-border);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+    }
+
+    .cf-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .cf-title {
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    .cf-subtitle {
+      color: var(--cf-sub);
+      font-size: 13px;
+    }
+
+    .cf-badge {
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0, 0, 0, 0.06);
+      color: var(--cf-text);
+    }
+
+    .cf-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+      background: var(--cf-neutral);
+    }
+
+    .cf-dot.busier { background: #ea580c; }          /* orange */
+    .cf-dot.busier-strong { background: #ef4444; }   /* red */
+    .cf-dot.quieter { background: var(--cf-down); }  /* green */
+    .cf-dot.quieter-strong { background: #15803d; }  /* darker green */
+    .cf-dot.similar { background: var(--cf-warn); }  /* amber */
+
+    .cf-compare {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--cf-sub);
+      margin-bottom: 8px;
+      min-height: 20px;
+    }
+
+    .cf-compare strong {
+      color: var(--cf-text);
+    }
+
+    .cf-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--cf-sub);
+      margin-top: 6px;
+    }
+
+    #cf-graph {
+      width: 100%;
+      max-width: 100%;
+      min-height: 140px;
+      height: clamp(160px, 40vw, 260px); /* responsive height */
+      max-height: 45vh;
+      display: block;
+    }
+
+    .cf-error {
+      color: #b91c1c;
+      font-size: 14px;
+      margin-top: 6px;
+    }
+
+    /* Toggle */
+    .cf-toggle {
+      margin: 10px 0 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--cf-border);
+      background: rgba(0,0,0,0.04);
+      color: var(--cf-text);
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+    .cf-toggle:hover {
+      background: rgba(0,0,0,0.08);
+      border-color: rgba(0,0,0,0.12);
+    }
+    .cf-toggle span {
+      font-weight: 600;
+    }
+
+    /* Gauge */
+    .cf-gauge {
+      margin: 10px 0 4px;
+    }
+    .cf-gauge-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--cf-sub);
+      margin-bottom: 4px;
+    }
+    .cf-gauge-bar {
+      position: relative;
+      width: 100%;
+      height: 14px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    .cf-gauge-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      border-radius: 999px;
+      background: #22c55e;
+      width: 0%;
+      transition: width 0.25s ease, background 0.2s ease;
+    }
+    .cf-gauge-ticks {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+    .cf-gauge-ticks span {
+      width: 1px;
+      background: rgba(0,0,0,0.1);
+      height: 100%;
+      opacity: 0.6;
+    }
+  </style>
+
+  <!-- Chart.js via CDN (small, no build step needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+</head>
+<body>
+  <div class="cf-card">
+    <div class="cf-header">
+      <div>
+        <div class="cf-title">Huidige drukte</div>
+        <div class="cf-subtitle" id="cf-updated">Bezig met bijwerken…</div>
+      </div>
+      <div class="cf-badge" id="cf-level">
+        <span class="cf-dot"></span>
+        <span id="cf-level-text">--</span>
+      </div>
+    </div>
+
+    <div class="cf-compare" id="cf-compare">
+      <span class="cf-dot" id="cf-compare-dot"></span>
+      <span id="cf-compare-text">Bezig met vergelijking…</span>
+    </div>
+
+    <div class="cf-gauge">
+      <div class="cf-gauge-label">
+        <span>Drukte (schaal 0-5)</span>
+        <span id="cf-gauge-value">--/5</span>
+      </div>
+      <div class="cf-gauge-bar">
+        <div class="cf-gauge-fill" id="cf-gauge-fill"></div>
+        <div class="cf-gauge-ticks">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+
+    <button class="cf-toggle" id="cf-graph-toggle" type="button">➤ Toon grafiek</button>
+    <div id="cf-graph-container" style="display:none;">
+      <canvas id="cf-graph" aria-label="Busyness trend chart"></canvas>
+    </div>
+    <div class="cf-error" id="cf-error" role="alert" style="display:none;"></div>
+
+    <div class="cf-footer">
+      <span>Vergeleken met hetzelfde moment gisteren</span>
+      <span id="cf-range-label"></span>
+    </div>
+  </div>
+
+  <script>
+    // --- CONFIGURE ME ---
+    const API_URL = 'http://server4.mountaineers.nl:3000'; // Your Count Folks API base URL
+    const STREAM_ID = 'stream1';             // Stream identifier
+    const BUCKET_SIZE = '5min';              // 5min, 15min, 1hour, etc.
+    const GRAPH_RANGE_MINUTES = 180;         // Show last N minutes on the graph
+    const COMPARISON_WINDOW_MINUTES = 20;    // Window to judge "current" busyness
+    const COMPARE_DAYS = 1;                  // Compare against yesterday
+    const REFRESH_MS = 30_000;               // Auto-refresh interval
+    const LOCALE = 'nl-NL';
+    const TIME_FMT = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }; // force 24h clock
+
+    // --- Helpers ---
+    const $ = (id) => document.getElementById(id);
+
+    function formatTimeRange(from, to) {
+      return `${from.toLocaleTimeString(LOCALE, TIME_FMT)}–${to.toLocaleTimeString(LOCALE, TIME_FMT)}`;
+    }
+
+    function getWindow(minutes) {
+      const to = new Date();
+      const from = new Date(to.getTime() - minutes * 60 * 1000);
+      return { from, to };
+    }
+
+    function busynessBadge(level) {
+      switch (level) {
+        case 'Empty': return { text: 'Leeg', className: 'similar' };
+        case 'Low': return { text: 'Rustig', className: 'quieter' };
+        case 'Medium': return { text: 'Normaal', className: 'similar' };
+        case 'High': return { text: 'Druk', className: 'busier' };
+        case 'Very High': return { text: 'Zeer druk', className: 'busier' };
+        default: return { text: '--', className: 'similar' };
+      }
+    }
+
+    function comparisonCopy(latest) {
+      if (!latest || latest.percentageChange === null || latest.percentageChange === undefined) {
+        return { text: 'Nog geen vergelijkingsdata', dot: 'neutral' };
+      }
+
+      const pct = Number(latest.percentageChange);
+      const rounded = `${pct >= 0 ? '+' : ''}${Math.round(pct)}%`;
+      const indicatorEn = latest.relativeIndicator || 'Similar';
+
+      const indicatorMap = {
+        'Much Busier': 'Veel drukker',
+        'Busier': 'Drukker',
+        'Similar': 'Gelijk',
+        'Quieter': 'Rustiger',
+        'Much Quieter': 'Veel rustiger',
+      };
+
+      const indicator = indicatorMap[indicatorEn] || indicatorEn;
+
+      let dot = 'similar';
+      if (indicatorEn.includes('Much Busier')) dot = 'busier-strong';
+      else if (indicatorEn.includes('Busier')) dot = 'busier';
+      else if (indicatorEn.includes('Much Quieter')) dot = 'quieter-strong';
+      else if (indicatorEn.includes('Quieter')) dot = 'quieter';
+
+      return { text: `${rounded} ${indicator.toLowerCase()} t.o.v. gisteren`, dot };
+    }
+
+    function buildUrl(path, params) {
+      const search = new URLSearchParams(params);
+      return `${API_URL}${path}?${search.toString()}`;
+    }
+
+    // --- Data fetching ---
+    async function fetchComparison() {
+      const { from, to } = getWindow(COMPARISON_WINDOW_MINUTES);
+      const url = buildUrl('/counts/busyness/compare', {
+        streamId: STREAM_ID,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        bucketSize: BUCKET_SIZE,
+        compareDays: COMPARE_DAYS,
+      });
+      const res = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      if (!res.ok) throw new Error(`Compare failed: ${res.status}`);
+      return res.json();
+    }
+
+    async function fetchGraphData() {
+      const { from, to } = getWindow(GRAPH_RANGE_MINUTES);
+      const url = buildUrl('/counts/busyness', {
+        streamId: STREAM_ID,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        bucketSize: BUCKET_SIZE,
+      });
+      const res = await fetch(url, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      if (!res.ok) throw new Error(`Graph fetch failed: ${res.status}`);
+      return res.json();
+    }
+
+
+    // --- Chart setup ---
+    let chart;
+    function ensureChart() {
+      if (chart) return chart;
+      const canvas = $('cf-graph');
+      if (!canvas) return null;
+      chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [
+            {
+              label: 'Vandaag',
+              data: [],
+              borderColor: '#2563eb',
+              backgroundColor: 'rgba(37, 99, 235, 0.18)',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 2,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { autoSkip: true, maxTicksLimit: 8 } },
+            y: { beginAtZero: true, suggestedMax: 10 },
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { mode: 'index', intersect: false },
+          },
+        },
+      });
+      return chart;
+    }
+
+    // --- UI update ---
+    function updateComparisonUI(latest) {
+      const { text, dot } = comparisonCopy(latest);
+      $('cf-compare-text').textContent = text;
+      $('cf-compare-dot').className = `cf-dot ${dot}`;
+    }
+
+    function updateLevelUI(latest) {
+      const badge = busynessBadge(latest?.busynessLevel);
+      $('cf-level-text').textContent = badge.text;
+      const dot = $('cf-level').querySelector('.cf-dot');
+      dot.className = `cf-dot ${badge.className}`;
+
+      updateGauge(latest);
+    }
+
+    function updateGauge(latest) {
+      const fill = $('cf-gauge-fill');
+      const valueEl = $('cf-gauge-value');
+      if (!latest) {
+        fill.style.width = '0%';
+        valueEl.textContent = '--/5';
+        return;
+      }
+
+      // Map maxCount to 0–5 scale using the same thresholds as busyness levels
+      const count = Number(latest.maxCount ?? 0);
+      let score = 0;
+      if (count === 0) score = 0;
+      else if (count < 5) score = 1;
+      else if (count < 15) score = 2;
+      else if (count < 30) score = 3;
+      else if (count < 45) score = 4;
+      else score = 5;
+
+      // Gauge colors by score (1-2 green, 3 orange, 4 dark orange, 5 red)
+      const colorByScore = {
+        0: 'var(--cf-neutral)',
+        1: 'var(--cf-down)',
+        2: 'var(--cf-down)',
+        3: 'var(--cf-warn)',
+        4: '#ea580c', // dark orange
+        5: '#ef4444', // red
+      };
+      fill.style.background = colorByScore[score] || 'var(--cf-neutral)';
+      fill.style.width = `${(score / 5) * 100}%`;
+      valueEl.textContent = `${score}/5`;
+    }
+
+    function updateGraphUI(data) {
+      const c = ensureChart();
+      if (!c) return;
+      const labels = data.map(d => new Date(d.windowStart).toLocaleTimeString(LOCALE, TIME_FMT));
+      const values = data.map(d => d.maxCount);
+      c.data.labels = labels;
+      c.data.datasets[0].data = values;
+      c.update();
+
+      if (data.length) {
+        const from = new Date(data[0].windowStart);
+        const to = new Date(data[data.length - 1].windowEnd);
+        $('cf-range-label').textContent = formatTimeRange(from, to);
+      } else {
+        $('cf-range-label').textContent = 'Nog geen data';
+      }
+    }
+
+    function showError(message) {
+      const el = $('cf-error');
+      el.textContent = message;
+      el.style.display = 'block';
+    }
+
+    function clearError() {
+      $('cf-error').style.display = 'none';
+    }
+
+    async function refresh() {
+      try {
+        clearError();
+        const [compare, graph] = await Promise.all([
+          fetchComparison(),
+          fetchGraphData(),
+        ]);
+
+        const latest = compare?.[compare.length - 1];
+        updateLevelUI(latest);
+        updateComparisonUI(latest);
+        updateGraphUI(graph || []);
+
+        $('cf-updated').textContent = `Bijgewerkt ${new Date().toLocaleTimeString(LOCALE, TIME_FMT)}`;
+      } catch (err) {
+        console.error(err);
+        showError('Kon data niet laden. Controleer API-URL, stream ID en CORS.');
+      }
+    }
+
+    // Kick off once Chart.js is ready
+    window.addEventListener('DOMContentLoaded', () => {
+      refresh();
+      setInterval(refresh, REFRESH_MS);
+
+      const toggle = $('cf-graph-toggle');
+      const container = $('cf-graph-container');
+      toggle?.addEventListener('click', () => {
+        const isHidden = container.style.display === 'none';
+        container.style.display = isHidden ? 'block' : 'none';
+        toggle.textContent = isHidden ? '▼ Verberg grafiek' : '➤ Toon grafiek';
+        if (isHidden) {
+          const c = ensureChart();
+          // Resize after showing to get correct width
+          setTimeout(() => c?.resize(), 0);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
+

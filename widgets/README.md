@@ -72,3 +72,4 @@ If your API is on a different server:
 - The backend should have CORS enabled by default
 - If accessing from a different domain, you may need to update backend CORS settings
 
+
