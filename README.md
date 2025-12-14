@@ -35,11 +35,26 @@ The system consists of four main services:
    
    **Note:** Use `docker compose` (with space, V2) not `docker-compose` (with hyphen, V1). If you get a `ModuleNotFoundError: No module named 'distutils'` error, see the Troubleshooting section below.
 
-4. **Access the frontend**:
-   Open your browser and navigate to `http://localhost`
+4. **Create a user account** (first time setup):
+   ```bash
+   # Using the helper script (recommended):
+   ./scripts/create-user.sh <username> <password>
+   # Example: ./scripts/create-user.sh admin mypassword
+   
+   # Or manually:
+   docker compose exec backend npx ts-node src/auth/scripts/create-user.ts <username> <password>
+   ```
+   
+   **Note:** You need at least one user account to access the frontend dashboard.
 
-5. **Access the backend API**:
+5. **Access the frontend**:
+   Open your browser and navigate to `http://localhost`
+   - You will be prompted to login with the credentials you created
+
+6. **Access the backend API**:
    API is available at `http://localhost:3000`
+   - Most endpoints require authentication (JWT token)
+   - The `/auth/login` endpoint is public
 
 ## Configuration
 
@@ -60,6 +75,9 @@ STREAM_ID=stream1
 # Detector Configuration
 CONFIDENCE_THRESHOLD=0.35
 AGGREGATION_INTERVAL=15
+
+# Authentication (Backend)
+JWT_SECRET=your-secret-key-change-in-production
 ```
 
 ### Stream URL
@@ -68,8 +86,42 @@ The detector supports HLS streams (`.m3u8` files) and RTSP streams. Update `STRE
 
 ## API Endpoints
 
-### POST /counts
-Create a new count entry (used by detector service).
+### Authentication
+
+#### POST /auth/login
+Login and receive a JWT token.
+
+**Request Body:**
+```json
+{
+  "username": "admin",
+  "password": "mypassword"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 1,
+    "username": "admin"
+  }
+}
+```
+
+**Note:** Include the token in subsequent requests as a Bearer token in the Authorization header:
+```
+Authorization: Bearer <access_token>
+```
+
+#### GET /auth/profile
+Get current user profile (requires authentication).
+
+### Counts Endpoints
+
+#### POST /counts
+Create a new count entry (used by detector service). **Note:** This endpoint does not require authentication to allow the detector service to post data.
 
 **Request Body:**
 ```json
@@ -81,8 +133,8 @@ Create a new count entry (used by detector service).
 }
 ```
 
-### GET /counts
-Query count data with optional filters.
+#### GET /counts
+Query count data with optional filters. **Requires authentication.**
 
 **Query Parameters:**
 - `streamId` (optional): Filter by stream ID

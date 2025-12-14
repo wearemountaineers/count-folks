@@ -3,10 +3,14 @@ import { format, startOfDay, endOfDay, parseISO } from 'date-fns';
 import { CountsChart } from './components/CountsChart';
 import { DateSelector } from './components/DateSelector';
 import { StatsCard } from './components/StatsCard';
+import { Login } from './components/Login';
 import { countsService } from './services/countsService';
+import { authService } from './services/authService';
 import './App.css';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(authService.isAuthenticated());
+  const [user, setUser] = useState(authService.getUser());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [counts, setCounts] = useState([]);
   const [busynessData, setBusynessData] = useState([]);
@@ -128,6 +132,22 @@ function App() {
 
   const stats = getStats();
 
+  const handleLogin = () => {
+    setIsAuthenticated(true);
+    setUser(authService.getUser());
+  };
+
+  const handleLogout = () => {
+    authService.logout();
+    setIsAuthenticated(false);
+    setUser(null);
+  };
+
+  // Show login page if not authenticated
+  if (!isAuthenticated) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <div className="App">
       <header className="App-header">
@@ -142,6 +162,10 @@ function App() {
               onChange={handleStreamIdChange}
               placeholder="stream1"
             />
+          </div>
+          <div className="user-controls">
+            <span className="username">Welcome, {user?.username || 'User'}</span>
+            <button onClick={handleLogout} className="logout-button">Logout</button>
           </div>
         </div>
       </header>

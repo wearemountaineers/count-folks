@@ -30,6 +30,7 @@ services:
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       DATABASE_NAME: ${POSTGRES_DB:-countfolks}
       PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
     ports:
       - "3000:3000"
     depends_on:

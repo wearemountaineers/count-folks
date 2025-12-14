@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Body, Query, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, ValidationPipe, UseGuards } from '@nestjs/common';
 import { CountsService } from './counts.service';
 import { CreateCountDto } from './dto/create-count.dto';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('counts')
 export class CountsController {
@@ -8,9 +9,11 @@ export class CountsController {
 
   @Post()
   create(@Body(ValidationPipe) createCountDto: CreateCountDto) {
+    // Detector service doesn't need auth
     return this.countsService.create(createCountDto);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get()
   findAll(
     @Query('streamId') streamId?: string,
@@ -21,6 +24,7 @@ export class CountsController {
     return this.countsService.findAll(streamId, from, to, aggregation);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('busyness')
   getBusyness(
     @Query('streamId') streamId?: string,
@@ -31,6 +35,7 @@ export class CountsController {
     return this.countsService.getBusyness(streamId, from, to, bucketSize || '5min');
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('busyness/compare')
   getBusynessWithComparison(
     @Query('streamId') streamId?: string,
