@@ -323,11 +323,12 @@ export class CountsService {
   }
 
   private calculateBusynessLevel(count: number): string {
-    // Define busyness thresholds (adjust based on your use case)
+    // Updated thresholds to align with widget gauge (0, <3, <8, <12, <18, 18+)
     if (count === 0) return 'Empty';
-    if (count < 5) return 'Low';
-    if (count < 15) return 'Medium';
-    if (count < 30) return 'High';
+    if (count < 3) return 'Low';
+    if (count < 8) return 'Medium';
+    if (count < 12) return 'High';
+    if (count < 18) return 'Very High';
     return 'Very High';
   }
 }
