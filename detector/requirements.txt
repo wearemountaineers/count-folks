@@ -2,6 +2,5 @@ opencv-python-headless==4.10.0.84
 ultralytics==8.3.0
 requests==2.31.0
 numpy==1.26.4
-torch==2.1.2
-torchvision==0.16.2
+# torch and torchvision installed separately from PyTorch CPU index
 
