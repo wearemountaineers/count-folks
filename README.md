@@ -213,7 +213,9 @@ docker compose down
 docker compose up -d --build
 ```
 
-### Database Backup
+### Database Backup and Transfer
+
+#### Quick Backup/Restore
 
 ```bash
 # Backup database
@@ -222,6 +224,62 @@ docker compose exec postgres pg_dump -U postgres countfolks > backup.sql
 # Restore database
 docker compose exec -T postgres psql -U postgres countfolks < backup.sql
 ```
+
+#### Using Helper Scripts
+
+We provide helper scripts in the `scripts/` directory for easier database operations:
+
+**Export database:**
+```bash
+# Export from docker-compose environment
+./scripts/export-db.sh
+
+# Export to specific file
+./scripts/export-db.sh my_backup.sql
+
+# Export from remote database (set environment variables)
+DB_HOST=prod.example.com DB_PASSWORD=mypass ./scripts/export-db.sh
+```
+
+**Import database:**
+```bash
+# Import to docker-compose environment
+./scripts/import-db.sh backup.sql
+
+# Import and drop existing database first
+./scripts/import-db.sh backup.sql --drop-existing
+
+# Import to remote database (set environment variables)
+DB_HOST=prod.example.com DB_PASSWORD=mypass ./scripts/import-db.sh backup.sql
+```
+
+**Transfer from dev to production (interactive):**
+```bash
+# Interactive script that exports from dev and imports to prod
+./scripts/transfer-db.sh
+
+# With drop existing option
+./scripts/transfer-db.sh --drop-existing
+```
+
+**Migrate from local Docker to production (recommended for VPN access):**
+```bash
+# Migrate to production at 10.0.0.105 (default)
+./scripts/migrate-to-prod.sh
+
+# With custom production host
+PROD_HOST=10.0.0.105 PROD_PASSWORD=mypass ./scripts/migrate-to-prod.sh
+
+# Drop existing production database first
+./scripts/migrate-to-prod.sh --drop-existing
+```
+
+**Environment variables for remote databases:**
+- `DB_HOST` - Database host (default: localhost)
+- `DB_PORT` - Database port (default: 5432)
+- `DB_USER` - Database user (default: postgres)
+- `DB_PASSWORD` - Database password (default: postgres)
+- `DB_NAME` - Database name (default: countfolks)
 
 ## Troubleshooting
 
