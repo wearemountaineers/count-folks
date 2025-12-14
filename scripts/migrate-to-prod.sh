@@ -8,7 +8,7 @@ set -e
 DROP_EXISTING=$1
 
 # Configuration
-PROD_HOST=${PROD_HOST:-10.0.0.105}
+PROD_HOST=${PROD_HOST:-10.0.0.106}
 PROD_PORT=${PROD_PORT:-5432}
 PROD_USER=${PROD_USER:-postgres}
 PROD_DB=${PROD_DB:-countfolks}

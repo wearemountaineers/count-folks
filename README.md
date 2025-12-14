@@ -264,11 +264,11 @@ DB_HOST=prod.example.com DB_PASSWORD=mypass ./scripts/import-db.sh backup.sql
 
 **Migrate from local Docker to production (recommended for VPN access):**
 ```bash
-# Migrate to production at 10.0.0.105 (default)
+# Migrate to production at 10.0.0.106 (default)
 ./scripts/migrate-to-prod.sh
 
 # With custom production host
-PROD_HOST=10.0.0.105 PROD_PASSWORD=mypass ./scripts/migrate-to-prod.sh
+PROD_HOST=10.0.0.106 PROD_PASSWORD=mypass ./scripts/migrate-to-prod.sh
 
 # Drop existing production database first
 ./scripts/migrate-to-prod.sh --drop-existing

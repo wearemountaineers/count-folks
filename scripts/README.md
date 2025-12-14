@@ -85,7 +85,7 @@ Migrates database from local Docker to production server (e.g., over VPN).
 
 **Usage:**
 ```bash
-# Migrate to production (defaults to 10.0.0.105)
+# Migrate to production (defaults to 10.0.0.106)
 ./scripts/migrate-to-prod.sh
 
 # Migrate and drop existing production database first
@@ -95,7 +95,7 @@ Migrates database from local Docker to production server (e.g., over VPN).
 **Environment Variables:**
 ```bash
 # Set production connection details
-export PROD_HOST=10.0.0.105
+export PROD_HOST=10.0.0.106
 export PROD_PORT=5432
 export PROD_USER=postgres
 export PROD_DB=countfolks

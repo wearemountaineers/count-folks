@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8" />
+<title>Busyness Lower Third</title>
+
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: transparent;
+        font-family: Arial, sans-serif;
+    }
+
+    /* LOWER THIRD CONTAINER */
+    #lowerthird {
+        position: absolute;
+        bottom: 40px;
+        left: 40px;
+
+        display: flex;
+        align-items: center;
+        gap: 20px;
+
+        padding: 18px 26px;
+        border-radius: 16px;
+
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+
+        color: white;
+
+        opacity: 0;
+        transform: translateY(40px);
+        animation: slideUp 0.7s ease-out forwards;
+    }
+
+    /* Busyness level styling */
+    #busyness-level {
+        font-size: 38px;
+        font-weight: bold;
+    }
+
+    /* Comparison styling */
+    #comparison {
+        font-size: 30px;
+        opacity: 0.9;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    #comparison.hidden {
+        display: none;
+    }
+
+    /* Trend graph container */
+    #trend-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: 10px;
+    }
+
+    #trend-graph {
+        width: 120px;
+        height: 50px;
+        opacity: 0.85;
+    }
+
+    /* Trend arrow icon */
+    .trend-arrow {
+        font-size: 28px;
+        opacity: 0.9;
+        line-height: 1;
+        font-weight: 900;
+        min-width: 20px;
+        text-align: center;
+        text-shadow: 
+            0 0 3px rgba(0, 0, 0, 0.5),
+            0 1px 1px rgba(0, 0, 0, 0.3),
+            0 -1px 1px rgba(0, 0, 0, 0.3),
+            1px 0 1px rgba(0, 0, 0, 0.3),
+            -1px 0 1px rgba(0, 0, 0, 0.3);
+        -webkit-text-stroke: 1.5px currentColor;
+        letter-spacing: 0.5px;
+    }
+
+    .trend-arrow.up {
+        color: #e74c3c;
+    }
+
+    .trend-arrow.down {
+        color: #2ecc71;
+    }
+
+    .trend-arrow.stable {
+        color: #f39c12;
+    }
+
+    /* Status indicator dot */
+    .status-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    .status-dot.busier {
+        background-color: #e74c3c;
+    }
+
+    .status-dot.quieter {
+        background-color: #2ecc71;
+    }
+
+    .status-dot.similar {
+        background-color: #f39c12;
+    }
+
+    /* Slide-up animation */
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(40px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0px);
+        }
+    }
+
+    /* Loading state */
+    .loading {
+        opacity: 0.6;
+    }
+</style>
+</head>
+
+<body>
+
+<div id="lowerthird">
+    <div id="busyness-level" class="loading">--</div>
+    <div id="comparison" class="loading">
+        <span class="status-dot"></span>
+        <span id="comparison-text">--</span>
+    </div>
+    <div id="trend-container">
+        <canvas id="trend-graph"></canvas>
+        <div id="trend-arrow" class="trend-arrow stable">→</div>
+    </div>
+</div>
+
+<script>
+/* --- CONFIGURATION --- */
+const API_URL = 'http://server4.mountaineers.nl:3000'; // Change to your API URL
+const STREAM_ID = 'stream1'; // Change to your stream ID
+const UPDATE_INTERVAL = 30000; // Update every 30 seconds
+
+/* --- GET CURRENT TIME WINDOW (last 15 minutes for better data availability) --- */
+function getCurrentTimeWindow() {
+    const now = new Date();
+    const to = new Date(now);
+    const from = new Date(now.getTime() - 15 * 60 * 1000); // Last 15 minutes (wider window for better data availability)
+    
+    return {
+        from: from.toISOString(),
+        to: to.toISOString()
+    };
+}
+
+/* --- GET TIME WINDOW FOR TREND (last 30 minutes) --- */
+function getTrendTimeWindow() {
+    const now = new Date();
+    const to = new Date(now);
+    const from = new Date(now.getTime() - 30 * 60 * 1000); // Last 30 minutes
+    
+    return {
+        from: from.toISOString(),
+        to: to.toISOString()
+    };
+}
+
+/* --- CALCULATE TREND DIRECTION --- */
+function calculateTrendDirection(data) {
+    if (!data || data.length < 2) {
+        return 'stable';
+    }
+    
+    // Get first and last values
+    const firstValue = data[0].maxCount || 0;
+    const lastValue = data[data.length - 1].maxCount || 0;
+    
+    // Calculate change percentage
+    const change = lastValue - firstValue;
+    const changePercent = firstValue > 0 ? (change / firstValue) * 100 : (change > 0 ? 100 : 0);
+    
+    // Only show trend if change is significant (at least 10% or 2 people)
+    const MIN_CHANGE_PERCENT = 10;
+    const MIN_CHANGE_ABSOLUTE = 2;
+    
+    if (Math.abs(change) < MIN_CHANGE_ABSOLUTE && Math.abs(changePercent) < MIN_CHANGE_PERCENT) {
+        return 'stable';
+    }
+    
+    return change > 0 ? 'up' : 'down';
+}
+
+/* --- UPDATE TREND ARROW --- */
+function updateTrendArrow(data) {
+    const arrowElement = document.getElementById('trend-arrow');
+    if (!arrowElement) return;
+    
+    const direction = calculateTrendDirection(data);
+    
+    // Set arrow symbol and class based on direction
+    switch (direction) {
+        case 'up':
+            arrowElement.textContent = '↑';
+            arrowElement.className = 'trend-arrow up';
+            break;
+        case 'down':
+            arrowElement.textContent = '↓';
+            arrowElement.className = 'trend-arrow down';
+            break;
+        default:
+            arrowElement.textContent = '→';
+            arrowElement.className = 'trend-arrow stable';
+    }
+}
+
+/* --- DRAW TREND GRAPH --- */
+function drawTrendGraph(data) {
+    const canvas = document.getElementById('trend-graph');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width = 120;
+    const height = canvas.height = 50;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+    
+    // Update trend arrow
+    updateTrendArrow(data);
+    
+    if (!data || data.length === 0) {
+        // Draw placeholder
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+        return;
+    }
+    
+    // Find min and max values for scaling
+    const values = data.map(d => d.maxCount || 0);
+    const min = Math.min(...values, 0);
+    const max = Math.max(...values, 1); // At least 1 to avoid division by zero
+    const range = max - min || 1;
+    
+    // Padding
+    const padding = 4;
+    const graphWidth = width - padding * 2;
+    const graphHeight = height - padding * 2;
+    
+    // Draw grid line (zero or min line)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 1;
+    const zeroY = height - padding - ((0 - min) / range) * graphHeight;
+    ctx.beginPath();
+    ctx.moveTo(padding, zeroY);
+    ctx.lineTo(width - padding, zeroY);
+    ctx.stroke();
+    
+    // Draw trend line
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    
+    data.forEach((point, index) => {
+        const x = padding + (index / (data.length - 1 || 1)) * graphWidth;
+        const y = height - padding - ((point.maxCount - min) / range) * graphHeight;
+        
+        if (index === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    });
+    
+    ctx.stroke();
+    
+    // Draw data points
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    data.forEach((point, index) => {
+        const x = padding + (index / (data.length - 1 || 1)) * graphWidth;
+        const y = height - padding - ((point.maxCount - min) / range) * graphHeight;
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+/* --- GET BUSYNESS LEVEL TEXT --- */
+function getBusynessText(level) {
+    const levels = {
+        'Empty': 'Leeg',
+        'Low': 'Rustig',
+        'Medium': 'Normaal',
+        'High': 'Druk',
+        'Very High': 'Zeer Druk'
+    };
+    return levels[level] || level;
+}
+
+/* --- GET COMPARISON TEXT --- */
+function getComparisonText(percentageChange, relativeIndicator, currentCount, historicalAvg) {
+    if (percentageChange === null || percentageChange === undefined) {
+        return 'Geen data';
+    }
+    
+    // Only show comparison if counts are meaningful (at least 3 people)
+    // This avoids misleading percentages like "100% busier" when going from 0 to 1 person
+    const MINIMUM_COUNT_FOR_COMPARISON = 3;
+    
+    if (currentCount < MINIMUM_COUNT_FOR_COMPARISON && historicalAvg < MINIMUM_COUNT_FOR_COMPARISON) {
+        return 'Te weinig data';
+    }
+    
+    const absChange = Math.abs(percentageChange);
+    const sign = percentageChange >= 0 ? '+' : '';
+    
+    // Dutch translations
+    const indicators = {
+        'Much Busier': 'Veel drukker',
+        'Busier': 'Drukker',
+        'Similar': 'Gelijk',
+        'Quieter': 'Rustiger',
+        'Much Quieter': 'Veel rustiger'
+    };
+    
+    const indicatorText = indicators[relativeIndicator] || relativeIndicator;
+    
+    return `${sign}${absChange.toFixed(0)}% ${indicatorText}`;
+}
+
+/* --- GET STATUS DOT CLASS --- */
+function getStatusClass(relativeIndicator) {
+    if (!relativeIndicator) return '';
+    
+    if (relativeIndicator.includes('Busier')) {
+        return 'busier';
+    } else if (relativeIndicator.includes('Quieter')) {
+        return 'quieter';
+    } else {
+        return 'similar';
+    }
+}
+
+/* --- UPDATE BUSYNESS DISPLAY --- */
+async function updateBusyness() {
+    try {
+        const timeWindow = getCurrentTimeWindow();
+        const trendWindow = getTrendTimeWindow();
+        
+        // Get current busyness (without comparison) - always fetch this
+        const busynessUrl = `${API_URL}/counts/busyness?` +
+            `streamId=${STREAM_ID}&` +
+            `from=${encodeURIComponent(timeWindow.from)}&` +
+            `to=${encodeURIComponent(timeWindow.to)}&` +
+            `bucketSize=5min`;
+        
+        // Get busyness with comparison to yesterday (optional)
+        const compareUrl = `${API_URL}/counts/busyness/compare?` +
+            `streamId=${STREAM_ID}&` +
+            `from=${encodeURIComponent(timeWindow.from)}&` +
+            `to=${encodeURIComponent(timeWindow.to)}&` +
+            `bucketSize=5min&` +
+            `compareDays=1`; // Compare to yesterday
+        
+        // Get trend data for last 30 minutes
+        const trendUrl = `${API_URL}/counts/busyness?` +
+            `streamId=${STREAM_ID}&` +
+            `from=${encodeURIComponent(trendWindow.from)}&` +
+            `to=${encodeURIComponent(trendWindow.to)}&` +
+            `bucketSize=5min`;
+        
+        // Fetch all in parallel
+        const [busynessResponse, compareResponse, trendResponse] = await Promise.allSettled([
+            fetch(busynessUrl, { 
+                cache: "no-store",
+                headers: { 'Accept': 'application/json' }
+            }),
+            fetch(compareUrl, { 
+                cache: "no-store",
+                headers: { 'Accept': 'application/json' }
+            }),
+            fetch(trendUrl, { 
+                cache: "no-store",
+                headers: { 'Accept': 'application/json' }
+            })
+        ]);
+        
+        // Process busyness data (required)
+        let busynessData = null;
+        if (busynessResponse.status === 'fulfilled' && busynessResponse.value.ok) {
+            busynessData = await busynessResponse.value.json();
+        }
+        
+        // Process comparison data (optional)
+        let compareData = null;
+        if (compareResponse.status === 'fulfilled' && compareResponse.value.ok) {
+            compareData = await compareResponse.value.json();
+        }
+        
+        // Process trend data (optional)
+        let trendData = null;
+        if (trendResponse.status === 'fulfilled' && trendResponse.value.ok) {
+            trendData = await trendResponse.value.json();
+        }
+        
+        // Remove loading class
+        document.getElementById('busyness-level').classList.remove('loading');
+        document.getElementById('comparison').classList.remove('loading');
+        
+        // Determine current busyness - try multiple sources
+        let currentBusyness = null;
+        
+        // Priority 1: Use comparison data if available (has both busyness and comparison)
+        if (compareData && compareData.length > 0) {
+            currentBusyness = compareData[compareData.length - 1];
+        }
+        // Priority 2: Use current busyness data
+        else if (busynessData && busynessData.length > 0) {
+            currentBusyness = busynessData[busynessData.length - 1];
+        }
+        // Priority 3: Use trend data (most recent point)
+        else if (trendData && trendData.length > 0) {
+            currentBusyness = trendData[trendData.length - 1];
+        }
+        
+        // Display current busyness (always show if available)
+        if (currentBusyness) {
+            const busynessText = getBusynessText(currentBusyness.busynessLevel);
+            document.getElementById('busyness-level').textContent = busynessText;
+        } else {
+            document.getElementById('busyness-level').textContent = 'Geen data';
+        }
+        
+        // Display comparison (if available in compareData)
+        const comparisonElement = document.getElementById('comparison');
+        
+        if (compareData && compareData.length > 0) {
+            const latest = compareData[compareData.length - 1];
+            
+            // Only show comparison if we have percentage change data and meaningful counts
+            if (latest.percentageChange !== null && latest.percentageChange !== undefined) {
+                const currentCount = latest.maxCount || 0;
+                const historicalAvg = latest.historicalAverage || 0;
+                
+                // Only show comparison if counts are meaningful (at least 3 people)
+                const MINIMUM_COUNT_FOR_COMPARISON = 3;
+                
+                if (currentCount >= MINIMUM_COUNT_FOR_COMPARISON || historicalAvg >= MINIMUM_COUNT_FOR_COMPARISON) {
+                    const comparisonText = getComparisonText(
+                        latest.percentageChange, 
+                        latest.relativeIndicator,
+                        currentCount,
+                        historicalAvg
+                    );
+                    document.getElementById('comparison-text').textContent = comparisonText;
+                    
+                    // Update status dot
+                    const statusDot = document.querySelector('.status-dot');
+                    statusDot.className = 'status-dot ' + getStatusClass(latest.relativeIndicator);
+                    
+                    // Show comparison element
+                    comparisonElement.classList.remove('hidden');
+                } else {
+                    // Counts too low for meaningful comparison - hide it
+                    comparisonElement.classList.add('hidden');
+                }
+            } else {
+                // No comparison data available - hide it
+                comparisonElement.classList.add('hidden');
+            }
+        } else {
+            // No comparison data - hide the comparison element entirely
+            comparisonElement.classList.add('hidden');
+        }
+        
+        // Draw trend graph (use trendData if available, otherwise use busynessData)
+        const graphData = trendData && trendData.length > 0 ? trendData : 
+                         (busynessData && busynessData.length > 0 ? busynessData : []);
+        
+        if (graphData.length > 0) {
+            drawTrendGraph(graphData);
+        } else {
+            drawTrendGraph([]);
+        }
+        
+    } catch (err) {
+        console.error("Error loading busyness:", err);
+        
+        // Show error state
+        document.getElementById('busyness-level').textContent = 'Fout';
+        document.getElementById('comparison-text').textContent = 'Geen verbinding';
+        document.getElementById('busyness-level').classList.add('loading');
+        document.getElementById('comparison').classList.add('loading');
+        drawTrendGraph([]);
+    }
+}
+
+// Start updates
+updateBusyness();
+setInterval(updateBusyness, UPDATE_INTERVAL);
+</script>
+
+</body>
+</html>
+
