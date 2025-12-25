@@ -8,6 +8,11 @@ from collections import deque
 from ultralytics import YOLO
 import signal
 import sys
+try:
+    import yt_dlp
+    YT_DLP_AVAILABLE = True
+except ImportError:
+    YT_DLP_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(
@@ -17,7 +22,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration from environment
-STREAM_URL = os.getenv('STREAM_URL', 'https://wintereventsonenbreugel.s3.eu-west-1.amazonaws.com/hls/0/stream.m3u8')
+STREAM_URL = os.getenv('STREAM_URL')
+TWITCH_CHANNEL = os.getenv('TWITCH_CHANNEL')
+TWITCH_CLIENT_ID = os.getenv('TWITCH_CLIENT_ID')
+TWITCH_CHECK_INTERVAL = int(os.getenv('TWITCH_CHECK_INTERVAL', '60'))  # seconds
 STREAM_ID = os.getenv('STREAM_ID', 'stream1')
 BACKEND_URL = os.getenv('BACKEND_URL', 'http://backend:3000')
 CONFIDENCE_THRESHOLD = float(os.getenv('CONFIDENCE_THRESHOLD', '0.35'))
@@ -102,15 +110,132 @@ def aggregate_and_send():
     counts_buffer.clear()
     last_aggregation_time = time.time()
 
+def get_twitch_stream_url(channel_name, client_id=None):
+    """Check if Twitch channel is live and get HLS stream URL using yt-dlp"""
+    try:
+        # First, check if stream is live using Twitch API (if Client-ID provided)
+        if client_id and client_id.strip():
+            try:
+                url = f"https://api.twitch.tv/helix/streams?user_login={channel_name}"
+                headers = {'Client-ID': client_id}
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+                data = response.json()
+                
+                if not data.get('data') or len(data['data']) == 0:
+                    logger.info(f"Twitch channel '{channel_name}' is offline")
+                    return None
+                logger.info(f"Twitch channel '{channel_name}' is live")
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 401:
+                    logger.error("Twitch API authentication failed. Please check your TWITCH_CLIENT_ID.")
+                    return None
+                logger.warning(f"Error checking Twitch stream status: {e}")
+        else:
+            logger.warning("TWITCH_CLIENT_ID not provided. Cannot verify if stream is live.")
+        
+        # Use yt-dlp to get the actual stream URL
+        # This handles authentication tokens automatically
+        if not YT_DLP_AVAILABLE:
+            logger.error("yt-dlp not available. Please install it: pip install yt-dlp")
+            # Fallback: try direct HLS URL (may not work without tokens)
+            logger.info("Attempting fallback to direct HLS URL (may require authentication)")
+            return f"https://usher.ttvnw.net/api/channel/hls/{channel_name}.m3u8"
+        
+        try:
+            # Use yt-dlp Python API to get stream info
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+            }
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                # Get stream info
+                info = ydl.extract_info(
+                    f'https://www.twitch.tv/{channel_name}',
+                    download=False
+                )
+                
+                if not info:
+                    logger.warning("yt-dlp returned no stream info")
+                    return None
+                
+                # Get the best format URL (usually HLS)
+                if 'url' in info:
+                    hls_url = info['url']
+                    logger.info(f"Retrieved Twitch stream URL via yt-dlp")
+                    return hls_url
+                elif 'formats' in info and len(info['formats']) > 0:
+                    # Try to find HLS format
+                    for format_info in info['formats']:
+                        if format_info.get('protocol') == 'https' and format_info.get('ext') == 'm3u8':
+                            hls_url = format_info.get('url')
+                            if hls_url:
+                                logger.info(f"Retrieved Twitch stream URL via yt-dlp")
+                                return hls_url
+                    # Fallback to first format
+                    hls_url = info['formats'][0].get('url')
+                    if hls_url:
+                        logger.info(f"Retrieved Twitch stream URL via yt-dlp")
+                        return hls_url
+                
+                logger.warning("yt-dlp returned stream info but no URL found")
+                return None
+                
+        except yt_dlp.utils.DownloadError as e:
+            if "is offline" in str(e).lower() or "does not exist" in str(e).lower():
+                logger.info(f"Twitch channel '{channel_name}' is offline or does not exist")
+                return None
+            logger.warning(f"yt-dlp download error: {e}")
+            # Fallback: try direct HLS URL (may not work without tokens)
+            logger.info("Attempting fallback to direct HLS URL (may require authentication)")
+            return f"https://usher.ttvnw.net/api/channel/hls/{channel_name}.m3u8"
+        except Exception as e:
+            logger.warning(f"yt-dlp error: {e}")
+            # Fallback: try direct HLS URL (may not work without tokens)
+            logger.info("Attempting fallback to direct HLS URL (may require authentication)")
+            return f"https://usher.ttvnw.net/api/channel/hls/{channel_name}.m3u8"
+            
+    except Exception as e:
+        logger.error(f"Unexpected error getting Twitch stream URL: {e}")
+        return None
+
+def resolve_stream_url():
+    """Resolve stream URL from either direct URL or Twitch channel name"""
+    # Priority: TWITCH_CHANNEL > STREAM_URL
+    # Check if TWITCH_CHANNEL is set and not empty
+    if TWITCH_CHANNEL and TWITCH_CHANNEL.strip():
+        logger.info(f"Resolving Twitch channel: {TWITCH_CHANNEL}")
+        stream_url = get_twitch_stream_url(TWITCH_CHANNEL, TWITCH_CLIENT_ID)
+        if stream_url:
+            return stream_url
+        else:
+            logger.warning(f"Twitch channel '{TWITCH_CHANNEL}' is offline or unavailable")
+            return None
+    # Check if STREAM_URL is set and not empty
+    elif STREAM_URL and STREAM_URL.strip():
+        logger.info(f"Using direct stream URL: {STREAM_URL}")
+        return STREAM_URL
+    else:
+        logger.error("Neither STREAM_URL nor TWITCH_CHANNEL is configured")
+        return None
+
 def connect_to_stream():
     """Connect to video stream with retry logic"""
     max_retries = 5
     retry_delay = 5
     
+    # Resolve stream URL (handles both direct URLs and Twitch channels)
+    stream_url = resolve_stream_url()
+    if not stream_url:
+        logger.error("Could not resolve stream URL")
+        return None
+    
     for attempt in range(max_retries):
         try:
-            logger.info(f"Attempting to connect to stream: {STREAM_URL} (attempt {attempt + 1}/{max_retries})")
-            cap = cv2.VideoCapture(STREAM_URL, cv2.CAP_FFMPEG)
+            logger.info(f"Attempting to connect to stream: {stream_url} (attempt {attempt + 1}/{max_retries})")
+            cap = cv2.VideoCapture(stream_url, cv2.CAP_FFMPEG)
             
             if not cap.isOpened():
                 raise Exception("Failed to open video stream")
@@ -138,7 +263,15 @@ def main():
     global running, counts_buffer, last_aggregation_time
     
     logger.info("Starting people detection service")
-    logger.info(f"Stream URL: {STREAM_URL}")
+    if TWITCH_CHANNEL and TWITCH_CHANNEL.strip():
+        logger.info(f"Twitch Channel: {TWITCH_CHANNEL}")
+        if TWITCH_CLIENT_ID and TWITCH_CLIENT_ID.strip():
+            logger.info("Twitch Client ID: configured")
+    elif STREAM_URL and STREAM_URL.strip():
+        logger.info(f"Stream URL: {STREAM_URL}")
+    else:
+        logger.error("Neither STREAM_URL nor TWITCH_CHANNEL is configured")
+        sys.exit(1)
     logger.info(f"Stream ID: {STREAM_ID}")
     logger.info(f"Backend URL: {BACKEND_URL}")
     logger.info(f"Confidence threshold: {CONFIDENCE_THRESHOLD}")
@@ -156,10 +289,19 @@ def main():
     frame_count = 0
     last_reconnect_time = time.time()
     reconnect_interval = 300  # Try to reconnect every 5 minutes if needed
+    last_twitch_check = time.time()
     
     try:
         while running:
             current_time = time.time()
+            
+            # For Twitch channels, periodically check if stream is still live
+            if TWITCH_CHANNEL and (current_time - last_twitch_check) >= TWITCH_CHECK_INTERVAL:
+                last_twitch_check = current_time
+                stream_url = get_twitch_stream_url(TWITCH_CHANNEL, TWITCH_CLIENT_ID)
+                if not stream_url:
+                    logger.warning(f"Twitch channel '{TWITCH_CHANNEL}' appears to be offline, will retry...")
+                    # Don't disconnect immediately, wait for read failure
             
             # Check if we need to reconnect
             if current_time - last_reconnect_time > reconnect_interval:
@@ -170,7 +312,12 @@ def main():
                     cap = connect_to_stream()
                     if cap is None:
                         logger.error("Reconnection failed, waiting before retry...")
-                        time.sleep(10)
+                        # For Twitch, wait and retry; for direct URLs, exit after max retries
+                        if TWITCH_CHANNEL:
+                            time.sleep(TWITCH_CHECK_INTERVAL)
+                            last_twitch_check = time.time()  # Reset check timer
+                        else:
+                            time.sleep(10)
                         continue
                     last_reconnect_time = time.time()
             
@@ -178,7 +325,21 @@ def main():
             ret, frame = cap.read()
             if not ret:
                 logger.warning("Failed to read frame, skipping...")
-                time.sleep(0.1)
+                # For Twitch channels, try to reconnect if stream might have gone offline
+                if TWITCH_CHANNEL:
+                    time.sleep(1)
+                    # Check if stream is still live
+                    stream_url = get_twitch_stream_url(TWITCH_CHANNEL, TWITCH_CLIENT_ID)
+                    if not stream_url:
+                        logger.warning("Twitch stream appears offline, attempting to reconnect...")
+                        cap.release()
+                        cap = connect_to_stream()
+                        if cap is None:
+                            logger.warning("Reconnection failed, will retry...")
+                            time.sleep(TWITCH_CHECK_INTERVAL)
+                            last_twitch_check = time.time()
+                else:
+                    time.sleep(0.1)
                 continue
             
             # Resize frame for processing (optional, can improve performance)
@@ -209,7 +370,8 @@ def main():
         if counts_buffer:
             aggregate_and_send()
         
-        cap.release()
+        if cap:
+            cap.release()
         logger.info("Detection service stopped")
 
 if __name__ == "__main__":

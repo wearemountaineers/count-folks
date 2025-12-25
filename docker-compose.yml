@@ -46,6 +46,9 @@ services:
     container_name: count-folks-detector
     environment:
       STREAM_URL: ${STREAM_URL:-https://wintereventsonenbreugel.s3.eu-west-1.amazonaws.com/hls/0/stream.m3u8}
+      TWITCH_CHANNEL: ${TWITCH_CHANNEL:-}
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+      TWITCH_CHECK_INTERVAL: ${TWITCH_CHECK_INTERVAL:-60}
       STREAM_ID: ${STREAM_ID:-stream1}
       BACKEND_URL: http://backend:3000
       CONFIDENCE_THRESHOLD: ${CONFIDENCE_THRESHOLD:-0.35}

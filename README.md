@@ -54,7 +54,14 @@ POSTGRES_PASSWORD=postgres
 POSTGRES_DB=countfolks
 
 # Stream Configuration
+# Option 1: Direct stream URL (HLS or RTSP)
 STREAM_URL=https://wintereventsonenbreugel.s3.eu-west-1.amazonaws.com/hls/0/stream.m3u8
+
+# Option 2: Twitch channel (alternative to STREAM_URL)
+TWITCH_CHANNEL=your_channel_name
+TWITCH_CLIENT_ID=your_twitch_client_id  # Optional but recommended for better rate limits
+TWITCH_CHECK_INTERVAL=60  # How often to check if stream is live (seconds)
+
 STREAM_ID=stream1
 
 # Detector Configuration
@@ -62,9 +69,41 @@ CONFIDENCE_THRESHOLD=0.35
 AGGREGATION_INTERVAL=15
 ```
 
-### Stream URL
+### Stream Configuration
 
-The detector supports HLS streams (`.m3u8` files) and RTSP streams. Update `STREAM_URL` in your `.env` file or `docker-compose.yml`.
+The detector supports two methods for video stream input:
+
+#### Option 1: Direct Stream URL
+
+Use `STREAM_URL` to connect directly to an HLS stream (`.m3u8` files) or RTSP stream. This is the traditional method for IP cameras or other streaming sources.
+
+```env
+STREAM_URL=https://example.com/stream.m3u8
+```
+
+#### Option 2: Twitch Channel
+
+Use `TWITCH_CHANNEL` to automatically fetch and connect to a Twitch live stream. The detector will:
+- Check if the channel is live using the Twitch API
+- Automatically get the HLS stream URL when the stream goes live
+- Periodically check if the stream is still live
+- Reconnect automatically when the stream becomes available
+
+```env
+TWITCH_CHANNEL=your_channel_name
+TWITCH_CLIENT_ID=your_twitch_client_id  # Optional but recommended
+TWITCH_CHECK_INTERVAL=60  # Check every 60 seconds (default)
+```
+
+**Getting a Twitch Client ID (Optional):**
+1. Go to [Twitch Developers](https://dev.twitch.tv/console/apps)
+2. Register a new application
+3. Copy the Client ID
+4. Add it to your `.env` file as `TWITCH_CLIENT_ID`
+
+**Note:** The Client ID is optional. The detector uses `yt-dlp` to get stream URLs, which works without authentication. However, providing a Client ID allows the detector to check if the stream is live before attempting to connect, which can save resources. Without a Client ID, the detector will still work but will attempt to connect directly.
+
+**Priority:** If both `STREAM_URL` and `TWITCH_CHANNEL` are set, `TWITCH_CHANNEL` takes priority.
 
 ## API Endpoints
 
@@ -100,12 +139,14 @@ GET /counts?streamId=stream1&from=2024-01-01T00:00:00Z&to=2024-01-01T23:59:59Z
 ### Detector Service
 
 The detector service:
-- Connects to the video stream
+- Connects to the video stream (direct URL or Twitch channel)
+- For Twitch channels: automatically checks if stream is live and gets HLS URL
 - Processes frames using YOLOv8n model
 - Counts people with confidence threshold filtering
-- Aggregates counts over 1-minute intervals
+- Aggregates counts over configurable intervals (default: 15 seconds)
 - Sends aggregated data to the backend API
 - Automatically reconnects on stream failures
+- For Twitch: periodically checks stream status and reconnects when stream goes live
 
 **Logs:**
 ```bash
