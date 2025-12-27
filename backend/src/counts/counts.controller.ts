@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, ValidationPipe, Param } from '@nestjs/common';
 import { CountsService } from './counts.service';
 import { CreateCountDto } from './dto/create-count.dto';
 
@@ -47,6 +47,19 @@ export class CountsController {
       bucketSize || '5min',
       days,
     );
+  }
+
+  @Get('stream-url/:channel')
+  async getStreamUrl(@Param('channel') channel: string) {
+    return this.countsService.getTwitchStreamUrl(channel);
+  }
+
+  @Get('stream-url')
+  async getStreamUrlByQuery(@Query('channel') channel: string) {
+    if (!channel) {
+      return { error: 'Channel parameter is required' };
+    }
+    return this.countsService.getTwitchStreamUrl(channel);
   }
 }
 

@@ -1,5 +1,10 @@
 FROM node:20-alpine
 
+# Install yt-dlp (requires Python)
+# Using --break-system-packages is safe in Docker containers
+RUN apk add --no-cache python3 py3-pip && \
+    pip3 install --no-cache-dir --break-system-packages yt-dlp
+
 WORKDIR /app
 
 # Copy package files

@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { Count } from './entities/count.entity';
 import { CreateCountDto } from './dto/create-count.dto';
+
+const execAsync = promisify(exec);
 
 @Injectable()
 export class CountsService {
@@ -330,6 +334,53 @@ export class CountsService {
     if (count < 12) return 'High';
     if (count < 18) return 'Very High';
     return 'Very High';
+  }
+
+  async getTwitchStreamUrl(channel: string): Promise<{ url: string } | { error: string }> {
+    if (!channel || channel.trim().length === 0) {
+      return { error: 'Channel parameter is required' };
+    }
+
+    try {
+      // Use yt-dlp to get the stream URL
+      const { stdout, stderr } = await execAsync(
+        `yt-dlp -g "https://www.twitch.tv/${channel}"`,
+        { timeout: 15000 } // 15 second timeout
+      );
+
+      const url = stdout.trim();
+      
+      if (!url || url.length === 0) {
+        return { error: 'Stream not available or channel is offline' };
+      }
+
+      return { url };
+    } catch (error: any) {
+      // Check if it's a "stream offline" error
+      if (error.stderr && (
+        error.stderr.includes('is offline') || 
+        error.stderr.includes('does not exist') ||
+        error.stderr.includes('No video formats found')
+      )) {
+        return { error: 'Stream is offline or channel does not exist' };
+      }
+
+      // Check if yt-dlp is not installed
+      if (error.message && (
+        error.message.includes('yt-dlp') || 
+        error.message.includes('not found') ||
+        error.code === 'ENOENT'
+      )) {
+        return { error: 'yt-dlp is not installed on the server' };
+      }
+
+      // Timeout error
+      if (error.signal === 'SIGTERM' || error.code === 'ETIMEDOUT') {
+        return { error: 'Request timed out while fetching stream URL' };
+      }
+
+      return { error: `Failed to get stream URL: ${error.message || 'Unknown error'}` };
+    }
   }
 }
 
